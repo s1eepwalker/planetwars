@@ -82,6 +82,7 @@ handle_cast({planetinfo, #planet{} = P}, #state{starmap = T} = State) ->
 	% lager:info("PLANET = ~p", [P]),
 	Pl = case ets:lookup(T, P #planet.id) of
 		[] -> P #planet{confederate = unknown};
+		[#planet{owner_id = 0} | _] -> P #planet{confederate = neutral};
 		[#planet{confederate = S} | _] -> P #planet{confederate = S}
 	end,
 	ets:insert(T, Pl),
