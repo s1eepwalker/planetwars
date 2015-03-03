@@ -32,19 +32,21 @@
 		id_to = 0              :: planet_id() | 0,
 		fleet = 0              :: fleet() | 0
 	}).
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -record(order,
 	{	                       % wait or {PId1, PId2, Fleet}
 		fleet_command = wait   :: wait | {planet_id(), planet_id(), fleet()},
 		message = #message{}   :: #message{}
 	}).
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -record(player, {
-		turn = 1                   :: turn(),
+		turn = 0                   :: turn(),
 		id = 0                     :: player_id(),
 		allies = []                :: [player_id()],
 		searching_ally = true      :: boolean(),
-		last_message = #message{}  :: #message{}
+		last_message = #message{}  :: #message{},
+		attack_list = []           :: [{planet_id(), turn()}]
 	}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 

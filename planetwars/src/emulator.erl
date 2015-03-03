@@ -13,7 +13,7 @@
 -export([terminate/2]).
 -export([code_change/3]).
 -define(SERVER, ?MODULE).
--define(MAX_TURNS, 5).
+-define(MAX_TURNS, 200).
 
 -include("pw.hrl").
 
@@ -199,6 +199,7 @@ load_map() ->
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = State) ->
+	show_world(State),
 	Planets = ets:match_object(worldmap, '_'),
 	SendPlanets = fun({_PlayerId, Pid}) ->
 		[gen_server:cast(Pid, {planetinfo, Planet}) || Planet <- Planets]
@@ -254,7 +255,7 @@ order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
 	NewOrders = case Cmd of
 		wait -> Orders;
 		{Pl1, Pl2, Fleet} ->
-			PlInfo = ets:match_object(worldmap, #planet{id = Pl1, _ = '_'}),
+			[PlInfo | _] = ets:match_object(worldmap, #planet{id = Pl1, _ = '_'}),
 			ets:insert(worldmap, PlInfo #planet{fleet = PlInfo #planet.fleet - Fleet}),
 			Orders ++ [{CurrentTurn + util:flight_time(Pl1, Pl2, worldmap),
 			{Pl2, {PlayerId, Fleet}}}]
@@ -265,10 +266,10 @@ order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
 		wait_players = proplists:delete(PlayerId, Waits)
 	}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-next_turn_handler(#state{turn = Turn, orders = Orders} = State) ->
-	lager:info("Turn = ~p", [Turn]),
+next_turn_handler(#state{turn = Turn} = State) ->
+	% lager:info("Turn = ~p", [Turn]),
 	loose_players(State),
-	fight(Turn, Orders),
+	fight(State),
 	case Turn > 1 of true -> increment(); _ -> ok end,
 	gen_server:cast(?SERVER, send_world),
 	gen_server:cast(?SERVER, wait_decisions),
@@ -278,7 +279,7 @@ get_team(PlayerId, #state{team1 = Team1, team2 = Team2}) ->
 	case proplists:get_value(PlayerId, Team1) of
 		undefined ->
 			case proplists:get_value(PlayerId, Team2) of
-				undefined -> undefined;
+				undefined -> neutral;
 				_ -> team2
 			end;
 		_ -> team1
@@ -295,15 +296,16 @@ loose_players(State) ->
 	end,
 	[F(X) || X <- State #state.wait_players].
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fight(Turn, Orders) ->
+fight(#state{turn = Turn, orders = Orders} = State) ->
 	% {planet_id(), {player_id(), fleet()}}
 	List = proplists:get_all_values(Turn, Orders),
-	orbital_fight(List).
+	orbital_fight(List, State).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-orbital_fight([]) ->
+orbital_fight([], _State) ->
 	ok;
-orbital_fight([{PlanetId, _} | _] = Planets) ->
-	PlInfo = ets:match_object(worldmap,#planet{id = PlanetId, fleet = '$1', _ = '_'}),
+orbital_fight([{PlanetId, _} = Rem| _] = Planets, State) ->
+	lager:info("FIGHT ~p", [Planets]),
+	[PlInfo | _] = ets:match_object(worldmap,#planet{id = PlanetId, fleet = '$1', _ = '_'}),
 
 	List = proplists:get_all_values(PlanetId, Planets) ++
 		[{planet, PlInfo #planet.fleet}],
@@ -318,9 +320,10 @@ orbital_fight([{PlanetId, _} | _] = Planets) ->
 		draw -> ets:insert(worldmap, PlInfo #planet{fleet = RestFleet});
 		planet -> ets:insert(worldmap, PlInfo #planet{fleet = RestFleet});
 		PlayerId ->
-			ets:insert(worldmap, PlInfo #planet{owner_id = PlayerId, fleet = RestFleet})
+			ets:insert(worldmap, PlInfo #planet{owner_id = PlayerId, fleet = RestFleet,
+				confederate = get_team(PlayerId, State)})
 	end,
-	orbital_fight(Planets -- List).
+	orbital_fight(Planets -- [Rem], State).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 increment() ->
 	Match = [{#planet{owner_id = '$1', _ = '_'},[{'=/=', '$1', 0}], ['$_']}],
@@ -332,6 +335,54 @@ increment() ->
 		ets:insert(worldmap, Planet #planet{fleet = Fleet + Inc})
 	end,
 	lists:foreach(F, List).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
+	io:format(?YELLOW "TURN ~p~n" ?NORM, [CurrentTurn - 1]),
+	io:format("SCORE:" ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n",
+		[util:fleet_total(worldmap, team1),
+		util:fleet_total(worldmap, team2),
+		util:fleet_total(worldmap, neutral)]),
+	Planets = ets:match_object(worldmap, #planet{_ = '_'}),
+	PrintPlanet = fun(#planet{
+			id = Id,
+			owner_id = OwnerId,
+			x = X,
+			y = Y,
+			fleet = Fleet,
+			confederate = Conf
+		}) ->
+	lists:flatten(io_lib:format("<~p>(~p) ~p x=~py=~p Fleet=~p",
+		[OwnerId, Id, Conf, X,Y, Fleet]))
+	end,
+	ColorPlanet = fun(Id) ->
+		[#planet{confederate = Conf} | _] = ets:lookup(worldmap, Id),
+		case Conf of
+			team1 -> lists:flatten(io_lib:format(?RED "(~p)" ?NORM, [Id]));
+			team2 -> lists:flatten(io_lib:format(?BLUE "(~p)" ?NORM, [Id]));
+			neutral -> lists:flatten(io_lib:format(?GRAY "(~p)" ?NORM, [Id]))
+		end
+	end,
+	PrintOrder = fun({Turn, {PlanetId, {PlayerId, Fleet}}}) ->
+		lists:flatten(io_lib:format("<~p> ---- F~p ----> ~s Turn = ~p",
+			[PlayerId, Fleet, ColorPlanet(PlanetId), Turn]))
+	end,
 
 
-
+	F = fun(X) ->
+		case X #planet.confederate of
+			team1 -> io:format(?RED "~s~n" ?NORM, [PrintPlanet(X)]);
+			team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintPlanet(X)]);
+			neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintPlanet(X)])
+		end
+	end,
+	F2 = fun({Turn, {_, {PlayerID, _}}} = X) when Turn >= CurrentTurn ->
+		case get_team(PlayerID, State) of
+			team1 -> io:format(?RED "~s~n" ?NORM, [PrintOrder(X)]);
+			team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintOrder(X)]);
+			neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintOrder(X)])
+		end;
+		(_) -> ok
+	end,
+	lists:foreach(F, Planets),
+	lists:foreach(F2, Orders).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

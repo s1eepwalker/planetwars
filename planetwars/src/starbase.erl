@@ -80,10 +80,22 @@ handle_cast(start_bot, #state{bot_name = BotName} = State) ->
 	{noreply, State #state{bot_pid = Pid}};
 handle_cast({planetinfo, #planet{} = P}, #state{starmap = T} = State) ->
 	% lager:info("PLANET = ~p", [P]),
-	Pl = case ets:lookup(T, P #planet.id) of
-		[] -> P #planet{confederate = unknown};
-		[#planet{owner_id = 0} | _] -> P #planet{confederate = neutral};
-		[#planet{confederate = S} | _] -> P #planet{confederate = S}
+	Player = State #state.player,
+	Allies = Player #player.allies,
+	PlayerId = Player #player.id,
+	SearchingAlly = Player #player.searching_ally,
+
+	Pl = case P of
+		#planet{owner_id = 0}  ->
+			P #planet{confederate = neutral};
+		#planet{owner_id = PlayerId}  ->
+			P #planet{confederate = ally};
+		#planet{owner_id = PLID} ->
+			case length(Allies -- [PLID]) == length(Allies) of
+				true when SearchingAlly -> P #planet{confederate = unknown};
+				true -> P #planet{confederate = enemy};
+				false -> P #planet{confederate = ally}
+			end
 	end,
 	ets:insert(T, Pl),
 	{noreply, State};

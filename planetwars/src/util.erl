@@ -68,8 +68,90 @@ set_planets_by_owner(OwnerId, Table, Sov) ->
 	List = ets:match_object(Table, #planet{owner_id = OwnerId, _ = '_'}),
 	[ets:insert(Table, X #planet{confederate = Sov}) || X <- List].
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-flight_time(Pl1, Pl2, Map) ->
+flight_time(Pl1, Pl2, Map) when is_atom(Map) ->
+	Distances = case get_param(Map, distances) of
+		undefined ->
+			D = calculate_distances(Map),
+			set_param(Map, distances, D),
+			D;
+		D -> D
+	end,
+	flight_time_raw(Pl1, Pl2, Distances).
+flight_time_raw(Pl1, Pl2, Map) when is_atom(Map) ->
 	[#planet{x = X1, y = Y1} | _] = ets:lookup(Map, Pl1),
 	[#planet{x = X2, y = Y2} | _] = ets:lookup(Map, Pl2),
-	round(math:sqrt(math:pow(X1 - X2, 2) + math:pow(Y1 - Y2, 2))).
+	round(math:sqrt(math:pow(X1 - X2, 2) + math:pow(Y1 - Y2, 2)));
+flight_time_raw(Pl1, Pl2, _Dict) when Pl1 == Pl2 ->
+	0;
+flight_time_raw(Pl1, Pl2, Dict) when Pl1 > Pl2 ->
+	flight_time_raw(Pl2, Pl1, Dict);
+flight_time_raw(Pl1, Pl2, Dict) when Pl1 < Pl2 ->
+	dict:fetch({Pl1, Pl2}, Dict).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+calculate_distances(Map) ->
+	Size = proplists:get_value(size, ets:info(Map), 0),
+	F = fun(Id, Dict) ->
+		F2 = fun(Id2, Dict2) ->
+				Dist = flight_time_raw(Id, Id2, Map),
+				dict:store({Id, Id2}, Dist, Dict2)
+		end,
+		lists:foldl(F2, Dict, lists:seq(Id + 1, Size))
+	end,
+	lists:foldl(F, dict:new(), lists:seq(1,Size)).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+get_param(Map, Key) when is_atom(Key) ->
+	case ets:match_object(Map, {Key, '_'}) of
+		[] -> undefined;
+		[{Key, Val} | _] -> Val
+	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+set_param(Map, Key, Value) when is_atom(Key) ->
+	ets:insert(Map, {Key, Value}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+shortest_path(#planet{} = P, Map, Conf) when is_atom(Conf) ->
+	shortest_path(P, Map, [Conf]);
+shortest_path(#planet{id = PlanetId}, Map, Confs) when is_list(Confs) ->
+	Match = [{
+		#planet{id = '$1',
+		confederate = '$4',
+		fleet = '$2',
+		increment = '$3',
+		_ = '_'},
+		[{'==', '$4', X}], ['$_']}
+	 || X <- Confs],
+	Worlds = ets:select(Map, Match),
+	Lengths = [{P, flight_time(PlanetId, Id, Map)}
+		|| #planet{id = Id} = P <- Worlds],
+	lists:sort(fun({_, L1},{_, L2}) -> L1 < L2 end, Lengths).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fleet_calculate(Home, Target, Len, Startegy) ->
+	HomeFleet = Home #planet.fleet,
+	TargetFleet = case Target #planet.confederate of
+		neutral -> Target #planet.fleet;
+		_ -> Target #planet.fleet + Len*Target #planet.increment
+	end,
+	case HomeFleet > TargetFleet of
+		true when Startegy == safe ->
+			{Home #planet.id, Target #planet.id, TargetFleet + trunc((HomeFleet - TargetFleet)/3)};
+		false when Startegy == safe ->
+			{Home #planet.id, Target #planet.id, round(HomeFleet / 2)};
+		true when Startegy == aggro ->
+			{Home #planet.id, Target #planet.id, TargetFleet + trunc((HomeFleet - TargetFleet)/2)};
+		false when Startegy == aggro ->
+			{Home #planet.id, Target #planet.id, HomeFleet}
+	end.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+fleet_total(Map, Confs) when is_atom(Confs) ->
+	fleet_total(Map, [Confs]);
+fleet_total(Map, Confs) when is_list(Confs) ->
+	Match = [{
+		#planet{confederate = '$1',
+		fleet = '$2',
+		_ = '_'},
+		[{'==', '$1', X}], ['$2']}
+	 || X <- Confs],
+	Fleets = ets:select(Map, Match),
+	lists:foldl(fun(X, Acc) -> X + Acc end, 0, Fleets).
+
 
