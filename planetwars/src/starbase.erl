@@ -18,7 +18,7 @@
 
 -record(state, {
 		player = #player{}         :: #player{},
-		bot_name = bot1            :: atom(),
+		bot_name = bot_safe        :: atom(),
 		bot_pid = undefined        :: pid(),
 		starmap = undefined        :: atom()
 	}).
@@ -27,7 +27,7 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link() ->
-	start_link(?SERVER, bot1).
+	start_link(?SERVER, bot_safe).
 start_link(Name, BotName) ->
 	gen_server:start_link({local, Name}, ?MODULE, [BotName], []).
 
@@ -78,7 +78,7 @@ handle_cast(start_bot, #state{bot_name = BotName} = State) ->
 	% supervisor:start_child(planetwars_sup, Bot),
 	{ok, Pid} = BotName:start_link(BotN),
 	{noreply, State #state{bot_pid = Pid}};
-handle_cast({planetinfo, #planet{} = P}, #state{starmap = T} = State) ->
+handle_cast({planetinfo, #planet{} = P}, #state{starmap = Map} = State) ->
 	% lager:info("PLANET = ~p", [P]),
 	Player = State #state.player,
 	Allies = Player #player.allies,
@@ -97,10 +97,11 @@ handle_cast({planetinfo, #planet{} = P}, #state{starmap = T} = State) ->
 				false -> P #planet{confederate = ally}
 			end
 	end,
-	ets:insert(T, Pl),
+	% gen_server:cast(Pid, {analyze_planet, Pl, Player, Map}),
+	ets:insert(Map, Pl),
 	{noreply, State};
-handle_cast({your_id, Id}, #state{player = Player} = State) ->
-	% lager:info("ID = ~p", [Id]),
+handle_cast({your_id, Id}, #state{player = Player, bot_pid = _Pid, starmap = _Map} = State) ->
+	% gen_server:cast(Pid, {analyze_map, Player, Map}),
 	UpdatedPlayer = Player #player{id = Id, turn = Player #player.turn + 1},
 	{noreply, State #state{player = UpdatedPlayer}};
 handle_cast({message, #message{} = Message}, #state{player = Player} = State) ->

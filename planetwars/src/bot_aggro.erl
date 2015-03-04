@@ -1,9 +1,9 @@
 -module(bot_aggro).
 -behaviour(gen_server).
 -compile({parse_transform, lager_transform}).
-
 %% directly function
 -export([start_link/0, start_link/1]).
+-export([analyze_planet/5]).
 
 %% gen_server callbacks
 -export([init/1]).
@@ -13,11 +13,17 @@
 -export([terminate/2]).
 -export([code_change/3]).
 -define(SERVER, ?MODULE).
-% -define(SEARCH_RADIUS, 5).
+
+-define(MAX_TURNS, 200).
+-define(SEARCH_RADIUS, 5).
+-define(MIN_FLEET, 3).
+
 
 -include("pw.hrl").
 
 -record(state, {
+		targets = dict:new(),
+		search_radius = ?SEARCH_RADIUS
 	}).
 
 
@@ -51,7 +57,7 @@ init(_Args) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 handle_call({solution, Player, Map}, _From, State) ->
-	{NewPlayer, Order} = solution_handler(Player, Map),
+	{NewPlayer, Order} = solution_handler(Player, Map, State),
 	{reply, {NewPlayer, Order}, State};
 handle_call(_Request, From, State) ->
 	Reply = {ok, From},
@@ -63,6 +69,19 @@ handle_call(_Request, From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
+handle_cast({analyze_planet, #planet{} = P, #player{id = PlayerId} = Player, Map}, State)
+	when PlayerId =/= 0 ->
+	NewState = analyze_planet_handler(P, self(), Player, Map, State),
+	{noreply, NewState};
+handle_cast({analyze_complete, {_target, _Len, #planet{id = PlanetId} = _Home} = Target},
+	#state{targets = Dict} = State) ->
+	% lager:critical("Target ~p", [Target]),
+	NewState = State #state{
+		targets = dict:store(PlanetId, Target, Dict)
+	},
+	{noreply, NewState};
+% handle_cast({analyze_complete, no_target}, State) ->
+% 	{noreply, State};
 handle_cast(_Msg, State) ->
 	{noreply, State}.
 
@@ -96,17 +115,18 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-solution_handler(#player{attack_list = AttackList, turn = CurrentTurn} = Player, Map) ->
-	% Ret = timer:tc(fun analyze_map/2, [Player, Map]),
-	% lager:warning("~p", [Ret]),
-	Commands = analyze_map(Player, Map),
+solution_handler(#player{attack_list = AttackList, turn = CurrentTurn} = Player, Map, State) ->
+	{_Time, Commands} = timer:tc(fun analyze_planets/3, [Player, Map, State]),
+	% lager:warning("~p ~p", [Player #player.id, Time]),
+	% Commands = analyze_map(Player, Map, State),
 	% analyze_help(Player, Map),
 	{NewAttackList, FleetCommand} = case Commands of
-		[] ->
+		no_target ->
 			{AttackList, wait};
-		[{Target, Len, Home} | _] ->
+		{Target, Len, Home} when (CurrentTurn + Len) < ?MAX_TURNS ->
 			{AttackList ++ [{Target #planet.id, CurrentTurn + Len}],
-			util:fleet_calculate(Home, Target, Len, aggro)}
+			util:fleet_calculate(Map, Home #planet.id, Target #planet.id, Len, aggro)}
+		% _ -> {AttackList, wait}
 	end,
 
 	{NewPlayer, Msg}  = make_message(Player, Map),
@@ -130,101 +150,114 @@ make_message(#player{searching_ally = true, last_message = LastMsg,
 			% util:mark_planets_by_owner(AllyID, Map, ally),
 			{Player #player{allies = Allies ++ [AllyID]}, LastMsg}
 	end.
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% analyze_map(Player, _Map,
+% 	#state{targets = Dict, search_radius = SearchRadius}) ->
+
+
+
+% 	World = analyze_planets(Player, Map, SearchRadius, self()),
+% 	Worlds = lists:sort(SortFun, lists:flatten([X || {_, X} <- dict:to_list(Dict)])),
+
+% 	FilterFun = fun({#planet{id = PlanetId}, _Len, _home}) ->
+% 		case proplists:get_value(PlanetId, AttackList) of
+% 			undefined -> true;
+% 			Turn -> CurrentTurn > Turn
+% 		end
+% 	end,
+
+% 	lists:filter(FilterFun, Worlds).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-analyze_map(Player, Map) ->
-	% lager:warning("turn = ~p", [Player #player.turn]),
-	CurrentTurn = Player #player.turn,
-	PlayerId = Player #player.id,
-	AttackList = Player #player.attack_list,
-
-	HomeWorlds =  ets:select(Map, [{#planet{id = '$1', owner_id = PlayerId, _ = '_'}, [], ['$_']}]),
-	SortFun = fun({_, L1, _}, {_, L2, _}) -> L1 < L2 end,
-	F = fun(Planet, {Easy, Moderate, Hard}) ->
-		{E, M, H} = analyze_planet(Planet, Player, Map),
-		{lists:sort(SortFun, Easy ++ E),
-		lists:sort(SortFun, Moderate ++ M),
-		lists:sort(SortFun, Hard ++ H)}
-	end,
-	{Easy, Moderate, Hard} = lists:foldl(F,{[], [], []}, HomeWorlds),
-
-	FilterFun = fun({#planet{id = PlanetId}, _Len, _home}) ->
-		case proplists:get_value(PlanetId, AttackList) of
-			undefined -> true;
-			Turn -> CurrentTurn > Turn
+analyze_planets(Player, Map, #state{search_radius = SearchRadius}) ->
+	HomeWorlds = ets:match_object(Map, #planet{owner_id = Player #player.id, _ = '_'}),
+	Analyze = fun Analyze([]) -> no_target;
+		Analyze([World |Worlds]) ->
+		case analyze_planet(World, Player, Map, SearchRadius, self()) of
+			no_target -> Analyze(Worlds);
+			Ret -> Ret
 		end
 	end,
-	lists:filter(FilterFun, Easy ++ Moderate ++ Hard).
-
+	Analyze(util:shuffle(HomeWorlds)).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-analyze_planet(Home, Player, Map) ->
-	PlayerId = Player #player.id,
-	Neutrals = util:shortest_path(Home, Map, neutral),
+analyze_planet(#planet{fleet = HomeFleet} = Home, Player, Map, SearchRadius, Pid)
+when HomeFleet > ?MIN_FLEET ->
+	AllNeutrals = util:shortest_path(Home, Map, neutral),
+	FilterFun = fun({#planet{}, D}) -> D =< SearchRadius end,
+	Neutrals = lists:filter(FilterFun, AllNeutrals),
 	Enemies = util:shortest_path(Home, Map, enemy),
-	% lager:info("enemies = ~p", [Enemies]),
 
-	EasyWorlds = fun({P, Len}, Acc) ->
-		case util:shortest_path(P, Map, [enemy, unknown]) of
+	CurrentTurn = Player #player.turn,
+	AttackList = Player #player.attack_list,
+
+
+	IsAttacked = fun(TId) ->
+		case proplists:get_value(TId, AttackList) of
+			undefined -> false;
+			Turn -> CurrentTurn - 1 < Turn
+		end
+	end,
+
+
+	CheckWorld = fun CheckWorld(_, []) -> no_target;
+		CheckWorld(Confs, [{#planet{id = TargetId, owner_id = 0} = P, Len} | Rest]) ->
+		case util:shortest_path_rad(P, Map, Confs, SearchRadius) of
 			[{_, Len2} | _] ->
+				Attacked = IsAttacked(TargetId),
 				case Len < Len2 andalso P #planet.fleet < Home #planet.fleet
 					andalso P #planet.confederate =/= ally
 					of
-					true -> Acc ++ [{P, Len, Home}];
-					_ -> Acc
+					true when not Attacked-> {P, Len, Home};
+					_ -> CheckWorld(Confs, Rest)
 				end;
-			_ -> Acc
-		end
-	end,
-	Easy = lists:foldl(EasyWorlds, [], Neutrals),
-	case length(Easy) > 0 of
-		true ->
-			lager:info("~p" ?GREEN "EasyWorlds = ~p" ?NORM, [PlayerId, Easy]);
-		_ -> ok
-	end,
-
-	ModerateWorlds = fun({P, Len}, Acc) ->
-		case util:shortest_path(P, Map, [unknown]) of
+			_ -> CheckWorld(Confs, Rest)
+		end;
+		CheckWorld(Confs, [{#planet{id = TargetId, owner_id = OId} = P, Len} | Rest]) when OId > 0 ->
+		case util:shortest_path_rad(P, Map, Confs, SearchRadius) of
 			[{_, Len2} | _] ->
-				case Len =< Len2 andalso P #planet.fleet < Home #planet.fleet
-					andalso P #planet.confederate =/= ally of
-					true -> Acc ++ [{P, Len, Home}];
-					_ -> Acc
-				end;
-			_ -> Acc
-		end
-	end,
-	Moderate = lists:foldl(ModerateWorlds, [], Neutrals),
-	case length(Moderate) > 0 of
-		true ->
-			lager:info("~p" ?YELLOW "ModerateWorlds" "= ~p" ?NORM, [PlayerId, Moderate]);
-		_ -> ok
-	end,
-
-	EnemyWorlds = fun({P, Len}, Acc) ->
-		case util:shortest_path(P, Map, enemy) of
-			[_,{_, Len2} | _] ->
+				Attacked = IsAttacked(TargetId),
 				case Len < Len2
 						andalso P #planet.confederate =/= ally
 						andalso (P#planet.fleet + P#planet.increment*Len) <
-						Home #planet.fleet of
-					true -> Acc ++ [{P, Len, Home}];
-					_ -> Acc
+						Home #planet.fleet
+						of
+					true when not Attacked -> {P, Len, Home};
+					_ -> CheckWorld(Confs, Rest)
 				end;
-			_ -> Acc
+			_ -> CheckWorld(Confs, Rest)
 		end
 	end,
-	Hard = lists:foldl(EnemyWorlds, [], Enemies),
-	NewHard = case length(Hard) > 0 of
-		true ->
-			lager:info("~p" ?RED "EnemyWorlds = ~p" ?NORM, [PlayerId, Hard]),
-			Hard;
-		_ when length(Enemies) > 0 andalso length(Neutrals) == 0 ->
-		% andalso	Home #planet.fleet > 10 ->
-			[{Enemy, Len} | _ ] = Enemies,
-			Hard ++ [{Enemy, Len, Home}];
-		_ -> Hard
+
+	World = case CheckWorld([enemy, unknown], Neutrals) of
+		no_target when length(Enemies) > 0 ->
+			{Enemy, Len} = hd(Enemies),
+			{Enemy, Len, Home};
+		R -> R
 	end,
-	{Easy, Moderate, NewHard}.
+
+	gen_server:cast(Pid, {analyze_complete, World}),
+	% lager:info("TURN=~p AttackList~p~n"
+	% 	"new target ~p", [CurrentTurn, AttackList, World]),
+	World;
+analyze_planet(_Home, _Player, _Map, _SearchRadius, _Pid) ->
+	no_target.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+analyze_planet_handler(#planet{owner_id = OwnerId} = P,
+	PID, #player{id = PlayerId} = Player, Map,
+	#state{search_radius = SearchRadius} = State) when OwnerId == PlayerId ->
+	spawn_link(?SERVER, analyze_planet, [P, Player, Map, SearchRadius, PID]),
+	State;
+analyze_planet_handler(#planet{id = PlanetId}, _PID, _Player, _Map,
+	#state{targets = Dict} = State) ->
+	NewState = 	State #state{
+		targets = dict:erase(PlanetId, Dict)
+	},
+	% lager:notice("~p(~p) State ~p", [_Player #player.id, PlanetId, dict:size(NewState #state.targets)]),
+	NewState.
+
+
+
+
 
 
 

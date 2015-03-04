@@ -40,8 +40,8 @@
 	}).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 -record(player, {
-		turn = 0                   :: turn(),
 		id = 0                     :: player_id(),
+		turn = 0                   :: turn(),
 		allies = []                :: [player_id()],
 		searching_ally = true      :: boolean(),
 		last_message = #message{}  :: #message{},

@@ -198,7 +198,12 @@ load_map() ->
 			lager:error("~p", [Err])
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = State) ->
+send_world_handler(#state{turn = Turn, team1 = Team1, team2 = Team2, messages = Messages} = State) ->
+	% case Turn rem 10 of
+	% 	0 ->
+	% 		show_world(State);
+	% 	_ -> ok
+	% end,
 	show_world(State),
 	Planets = ets:match_object(worldmap, '_'),
 	SendPlanets = fun({_PlayerId, Pid}) ->
@@ -268,7 +273,7 @@ order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 next_turn_handler(#state{turn = Turn} = State) ->
 	% lager:info("Turn = ~p", [Turn]),
-	loose_players(State),
+	% loose_players(State),
 	fight(State),
 	case Turn > 1 of true -> increment(); _ -> ok end,
 	gen_server:cast(?SERVER, send_world),
@@ -287,7 +292,7 @@ get_team(PlayerId, #state{team1 = Team1, team2 = Team2}) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 loose_players(State) ->
 	F = fun({PlayerId, Pid}) ->
-		lager:warning("Player ~p from ~p loose", [PlayerId, get_team(PlayerId, State)]),
+		lager:warning("Player ~p from ~p LOOSE", [PlayerId, get_team(PlayerId, State)]),
 		gen_server:cast(Pid, {you_loose, "you too slow"}),
 
 		List = ets:match_object(worldmap, #planet{owner_id = PlayerId, _ = '_'}),
@@ -304,7 +309,7 @@ fight(#state{turn = Turn, orders = Orders} = State) ->
 orbital_fight([], _State) ->
 	ok;
 orbital_fight([{PlanetId, _} = Rem| _] = Planets, State) ->
-	lager:info("FIGHT ~p", [Planets]),
+	% lager:info("FIGHT ~p", [Planets]),
 	[PlInfo | _] = ets:match_object(worldmap,#planet{id = PlanetId, fleet = '$1', _ = '_'}),
 
 	List = proplists:get_all_values(PlanetId, Planets) ++

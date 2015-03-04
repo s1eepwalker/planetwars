@@ -124,21 +124,26 @@ shortest_path(#planet{id = PlanetId}, Map, Confs) when is_list(Confs) ->
 	Lengths = [{P, flight_time(PlanetId, Id, Map)}
 		|| #planet{id = Id} = P <- Worlds],
 	lists:sort(fun({_, L1},{_, L2}) -> L1 < L2 end, Lengths).
+shortest_path_rad(#planet{} = P, Map, Conf, Rad) ->
+	FilterRad = fun({#planet{}, D}) -> D =< Rad end,
+	lists:filter(FilterRad, shortest_path(P, Map, Conf)).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fleet_calculate(Home, Target, Len, Startegy) ->
+fleet_calculate(Map, HomeId, TargetId, Len, Strategy) ->
+	[Home |_] = ets:lookup(Map, HomeId),
+	[Target |_] = ets:lookup(Map, TargetId),
 	HomeFleet = Home #planet.fleet,
 	TargetFleet = case Target #planet.confederate of
 		neutral -> Target #planet.fleet;
 		_ -> Target #planet.fleet + Len*Target #planet.increment
 	end,
 	case HomeFleet > TargetFleet of
-		true when Startegy == safe ->
-			{Home #planet.id, Target #planet.id, TargetFleet + trunc((HomeFleet - TargetFleet)/3)};
-		false when Startegy == safe ->
+		true when Strategy == safe ->
+			{Home #planet.id, Target #planet.id, TargetFleet + round((HomeFleet - TargetFleet)/3)};
+		false when Strategy == safe ->
 			{Home #planet.id, Target #planet.id, round(HomeFleet / 2)};
-		true when Startegy == aggro ->
-			{Home #planet.id, Target #planet.id, TargetFleet + trunc((HomeFleet - TargetFleet)/2)};
-		false when Startegy == aggro ->
+		true when Strategy == aggro ->
+			{Home #planet.id, Target #planet.id, TargetFleet + round((HomeFleet - TargetFleet)/2)};
+		false when Strategy == aggro ->
 			{Home #planet.id, Target #planet.id, HomeFleet}
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -153,5 +158,12 @@ fleet_total(Map, Confs) when is_list(Confs) ->
 	 || X <- Confs],
 	Fleets = ets:select(Map, Match),
 	lists:foldl(fun(X, Acc) -> X + Acc end, 0, Fleets).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+shuffle(List0) ->
+	{A1,A2,A3} = now(),
+	random:seed(A1, A2, A3),
+	List1 = [{random:uniform(), X} || X <- List0],
+		List2 = lists:keysort(1, List1),
+		[X || {_, X} <- List2].
 
 

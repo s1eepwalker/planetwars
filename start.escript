@@ -45,7 +45,7 @@ read_world(M) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 main(_Args) ->
 	net_kernel:start([pw, shortnames]),
-	io:format("node = ~p, cookie ~p~n", [node(), erlang:get_cookie()]),
+	% io:format("node = ~p, cookie ~p~n", [node(), erlang:get_cookie()]),
 	application:start(planetwars),
 
 	read_world(read_line()),
@@ -61,7 +61,7 @@ main(_Args) ->
 					io:format("F ~p ~p ~p~n", [Pl1, Pl2, Fleet])
 			end,
 			io:format("M ~p~n", [util:encode_message(Msg)]),
-			io:format(".~n");
+			io:format(".~n")
 	after
 		1000 ->
 			%TIMED OUT!
