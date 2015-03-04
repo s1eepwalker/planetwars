@@ -106,7 +106,6 @@ code_change(_OldVsn, State, _Extra) ->
 solution_handler(#player{turn = CurrentTurn} = Player, Map, State) ->
 
 	{_Time, {Commands, NewPlayer}} = timer:tc(fun analyze_planets/3, [Player, Map, State]),
-		lager:info("Command ~p", [Commands]),
 	% case _Time > 300000 of
 	% 	true ->
 	% 		lager:critical("~p TIME ~p", [Player #player.id , _Time]);
