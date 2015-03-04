@@ -214,7 +214,7 @@ when HomeFleet > ?MIN_FLEET ->
 	end,
 
 	World = case CheckWorld([enemy, unknown], Neutrals) of
-		no_target when length(Enemies) > 0 andalso HomeFleet > ?MIN_FLEET * 3 ->
+		no_target when length(Enemies) > 0 ->
 			{Enemy, Len} = hd(Enemies),
 			{Enemy, Len, Home};
 		no_target -> no_target;

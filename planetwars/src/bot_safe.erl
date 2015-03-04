@@ -189,8 +189,8 @@ when HomeFleet > ?MIN_FLEET ->
 	AllNeutrals = lists:filter(FilterAttacked, util:shortest_path(Home, Map, neutral)),
 	FilterRad = fun({#planet{}, D}) -> D =< SearchRadius end,
 	Neutrals = lists:filter(FilterRad, AllNeutrals),
-	Enemies = lists:filter(FilterAttacked,
-			util:shortest_path_rad(Home, Map, enemy, SearchRadius)),
+	AllEnemies = lists:filter(FilterAttacked, util:shortest_path(Home, Map, enemy)),
+	Enemies = lists:filter(FilterRad, AllEnemies),
 
 
 
@@ -230,12 +230,20 @@ when HomeFleet > ?MIN_FLEET ->
 				true -> {Neutral, Len, Home};
 				false ->
 					case CheckWorld([enemy], Enemies) of
-						no_target when length(Enemies) > 0 andalso HomeFleet > ?MIN_FLEET * 3 ->
-							{Enemy, Len2} = hd(Enemies),
+						no_target when length(AllEnemies) > 0 ->
+							{Enemy, Len2} = hd(AllEnemies),
 							{Enemy, Len2, Home};
 						R -> R
 					end
 			end;
+		no_target ->
+			case CheckWorld([enemy], Enemies) of
+				no_target when length(AllEnemies) > 0 ->
+					{Enemy, Len2} = hd(AllEnemies),
+					{Enemy, Len2, Home};
+				R -> R
+			end;
+
 		R -> R
 	end,
 	% lager:info("TURN=~p AttackList~p~n"
