@@ -13,7 +13,7 @@
 -export([terminate/2]).
 -export([code_change/3]).
 -define(SERVER, ?MODULE).
--define(MAX_TURNS, 50).
+-define(MAX_TURNS, 200).
 
 -include("pw.hrl").
 
