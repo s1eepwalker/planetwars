@@ -210,7 +210,7 @@ send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = S
 		Msg = proplists:get_value(PlayerId, Messages),
 		case Msg of
 			#message{} ->
-				lager:info("Msg for ~p ~p M ~p", [PlayerId, Msg, util:encode_message(Msg)]),
+				% lager:info("Msg for ~p ~p M ~p", [PlayerId, Msg, util:encode_message(Msg)]),
 				gen_server:cast(Pid, {message, Msg});
 			_ -> ok
 		end,
@@ -343,11 +343,6 @@ increment() ->
 	lists:foreach(F, List).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
-	io:format(?YELLOW "TURN ~p~n" ?NORM, [CurrentTurn - 1]),
-	io:format("SCORE:" ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n",
-		[util:fleet_total(worldmap, team1),
-		util:fleet_total(worldmap, team2),
-		util:fleet_total(worldmap, neutral)]),
 	Planets = ets:match_object(worldmap, #planet{_ = '_'}),
 	PrintPlanet = fun(#planet{
 			id = Id,
@@ -374,11 +369,11 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 	end,
 
 
-	F = fun(X) ->
+	F = fun(X, {Team1, Team2}) ->
 		case X #planet.confederate of
-			team1 -> io:format(?RED "~s~n" ?NORM, [PrintPlanet(X)]);
-			team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintPlanet(X)]);
-			neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintPlanet(X)])
+			team1 -> io:format(?RED "~s~n" ?NORM, [PrintPlanet(X)]), {Team1 +1, Team2};
+			team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintPlanet(X)]), {Team1, Team2 + 1};
+			neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintPlanet(X)]), {Team1, Team2}
 		end
 	end,
 	F2 = fun({Turn, {_, {PlayerID, _}}} = X) when Turn >= CurrentTurn ->
@@ -389,6 +384,14 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 		end;
 		(_) -> ok
 	end,
-	lists:foreach(F, Planets),
-	lists:foreach(F2, Orders).
+	{T1, T2} =lists:foldl(F, {0, 0}, Planets),
+	lists:foreach(F2, Orders),
+	io:format(?YELLOW "TURN ~p~n" ?NORM, [CurrentTurn - 1]),
+	io:format("SCORE:" ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n"
+	 "Planets: " ?RED "~p" ?NORM " VS " ?BLUE "~p"?NORM "~n",
+		[util:fleet_total(worldmap, team1),
+		util:fleet_total(worldmap, team2),
+		util:fleet_total(worldmap, neutral),
+		T1, T2]).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

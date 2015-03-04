@@ -123,10 +123,21 @@ shortest_path(#planet{id = PlanetId}, Map, Confs) when is_list(Confs) ->
 	Worlds = ets:select(Map, Match),
 	Lengths = [{P, flight_time(PlanetId, Id, Map)}
 		|| #planet{id = Id} = P <- Worlds],
-	lists:sort(fun({_, L1},{_, L2}) -> L1 < L2 end, Lengths).
+	SortFun = fun
+			({#planet{fleet = Fleet1}, L1},
+				{#planet{fleet = Fleet2}, L1}) -> Fleet1 < Fleet2;
+			({#planet{increment = Inc1}, L1},
+				{#planet{increment = Inc1}, L2}) -> L1 < L2;
+			({#planet{increment = Inc1}, _},
+				{#planet{increment = Inc2}, _}) -> Inc1 > Inc2
+
+	end,
+	lists:sort(SortFun, Lengths).
 shortest_path_rad(#planet{} = P, Map, Conf, Rad) ->
 	FilterRad = fun({#planet{}, D}) -> D =< Rad end,
 	lists:filter(FilterRad, shortest_path(P, Map, Conf)).
+% util:shortest_path({planet,1,10,2,1,1,2,team1}, worldmap, neutral).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fleet_calculate(Map, HomeId, TargetId, Len, Strategy) ->
 	[Home |_] = ets:lookup(Map, HomeId),

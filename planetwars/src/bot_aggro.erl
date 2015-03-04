@@ -134,7 +134,7 @@ make_message(#player{searching_ally = false, allies = All, turn = CurrentTurn} =
 make_message(#player{searching_ally = true, last_message = LastMsg,
 	allies = Allies, id = Id} = Player, Cmds) ->
 	case LastMsg of
-		#message{type = no_msg} ->
+		#message{type = T} when T =/= im_here ->
 			{Player, #message{type = im_here, player_id = Id}};
 		#message{type = im_here, player_id = Id} ->
 			make_message(Player #player{searching_ally = false}, Cmds);

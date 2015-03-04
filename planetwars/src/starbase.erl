@@ -43,7 +43,7 @@ init([BotName]) ->
 	process_flag(trap_exit, true),
 	Ret = erlang:process_info(self(), [registered_name]),
 	RegName = proplists:get_value(registered_name, Ret),
-	lager:notice("~p: Captain '~p' on the bridge ...", [RegName, BotName]),
+	io:format(?YELLOW "~p:" ?GRAY " Captain " ?GREEN"~p" ?GRAY" on the bridge ...~n" ?NORM, [RegName, BotName]),
 	MapName = list_to_atom(atom_to_list(RegName) ++ "_map"),
 	ets:new(MapName, [public, ordered_set, named_table, {keypos, 2}]),
 
