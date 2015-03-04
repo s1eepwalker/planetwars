@@ -20,7 +20,8 @@
 		player = #player{}         :: #player{},
 		bot_name = bot_safe        :: atom(),
 		bot_pid = undefined        :: pid(),
-		starmap = undefined        :: atom()
+		starmap = undefined        :: atom(),
+		loose = false              :: boolean()
 	}).
 
 %% ------------------------------------------------------------------
@@ -110,8 +111,8 @@ handle_cast({message, #message{} = Message}, #state{player = Player} = State) ->
 	 	last_message = Message
 	},
 	{noreply, State #state{player = UpdatedPlayer}};
-handle_cast({wait_decision, Pid, STime}, #state{player = Player, starmap = Map} = State) ->
-	Timeout = (1000000 - timer:now_diff(now(), STime)) div 1000,
+handle_cast({wait_decision, Pid, STime}, #state{player = Player, starmap = Map, loose = false} = State)  ->
+	Timeout = (800000 - timer:now_diff(now(), STime)) div 1000,
 	% lager:info("Stime = ~p Timeout = ~p", [STime, Timeout]),
 	{ChangedPlayer, Reply} = case catch gen_server:call(State #state.bot_pid, {solution, Player, Map}, Timeout) of
 		{'EXIT', {timeout, _}} -> {Player, {timeout, Timeout}};
@@ -120,6 +121,11 @@ handle_cast({wait_decision, Pid, STime}, #state{player = Player, starmap = Map} 
 	end,
 	gen_server:cast(Pid, {order, Player #player.id, Reply}),
 	{noreply, State #state{player = ChangedPlayer}};
+handle_cast({wait_decision, Pid, _STime}, #state{player = Player, loose = true} = State)  ->
+	gen_server:cast(Pid, {order, Player #player.id, {Player, #order{}}}),
+	{noreply, State};
+handle_cast({you_loose, _}, State) ->
+	{noreply, State #state{loose = true}};
 handle_cast(_Msg, State) ->
 	{noreply, State}.
 
