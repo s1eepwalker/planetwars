@@ -132,16 +132,13 @@ make_message(#player{searching_ally = false, allies = All, turn = CurrentTurn} =
 				fleet = Fleet
 			}};
 make_message(#player{searching_ally = true, last_message = LastMsg,
-	allies = Allies, id = Id} = Player, _) ->
+	allies = Allies, id = Id} = Player, Cmds) ->
 	case LastMsg of
 		#message{type = no_msg} ->
-			% util:mark_planets_by_owner(Id, Map, ally),
 			{Player, #message{type = im_here, player_id = Id}};
 		#message{type = im_here, player_id = Id} ->
-			% util:mark_planets_other_team([Id] ++ Allies, Map),
-			{Player #player{searching_ally = false, last_message = #message{}}, #message{}};
+			make_message(Player #player{searching_ally = false}, Cmds);
 		#message{type = im_here, player_id = AllyID} ->
-			% util:mark_planets_by_owner(AllyID, Map, ally),
 			{Player #player{allies = Allies ++ [AllyID]}, LastMsg}
 	end;
 make_message(Player, _) ->
@@ -217,7 +214,7 @@ when HomeFleet > ?MIN_FLEET ->
 	end,
 
 	World = case CheckWorld([enemy, unknown], Neutrals) of
-		no_target when length(Enemies) > 0 ->
+		no_target when length(Enemies) > 0 andalso HomeFleet > ?MIN_FLEET * 3 ->
 			{Enemy, Len} = hd(Enemies),
 			{Enemy, Len, Home};
 		no_target -> no_target;

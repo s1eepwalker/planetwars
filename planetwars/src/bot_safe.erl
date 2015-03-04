@@ -226,13 +226,15 @@ when HomeFleet > ?MIN_FLEET ->
 	World = case CheckWorld([enemy, unknown], Neutrals) of
 		no_target when length(AllNeutrals) > 0 ->
 			{Neutral, Len} = hd(AllNeutrals),
-			{Neutral, Len, Home};
-		no_target ->
-			case CheckWorld([enemy], Enemies) of
-				no_target when length(Enemies) > 0 andalso HomeFleet > 10 ->
-					{Enemy, Len} = hd(Enemies),
-					{Enemy, Len, Home};
-				R -> R
+			case Len < SearchRadius * 3 of
+				true -> {Neutral, Len, Home};
+				false ->
+					case CheckWorld([enemy], Enemies) of
+						no_target when length(Enemies) > 0 andalso HomeFleet > ?MIN_FLEET * 3 ->
+							{Enemy, Len2} = hd(Enemies),
+							{Enemy, Len2, Home};
+						R -> R
+					end
 			end;
 		R -> R
 	end,
