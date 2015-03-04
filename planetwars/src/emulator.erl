@@ -198,12 +198,7 @@ load_map() ->
 			lager:error("~p", [Err])
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-send_world_handler(#state{turn = Turn, team1 = Team1, team2 = Team2, messages = Messages} = State) ->
-	% case Turn rem 10 of
-	% 	0 ->
-	% 		show_world(State);
-	% 	_ -> ok
-	% end,
+send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = State) ->
 	show_world(State),
 	Planets = ets:match_object(worldmap, '_'),
 	SendPlanets = fun({_PlayerId, Pid}) ->
@@ -237,7 +232,13 @@ wait_decisions_handler(#state{turn = Turn, team1 = Team1, team2 = Team2} = State
 			timer:apply_after(1000, gen_server, cast, [?SERVER, next_turn]),
 			State #state {wait_players = Team1 ++ Team2};
 		false ->
+			io:format("SCORE:" ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n",
+				[util:fleet_total(worldmap, team1),
+				util:fleet_total(worldmap, team2),
+				util:fleet_total(worldmap, neutral)]),
+
 			State #state {wait_players = []}
+
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
@@ -273,7 +274,7 @@ order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 next_turn_handler(#state{turn = Turn} = State) ->
 	% lager:info("Turn = ~p", [Turn]),
-	% loose_players(State),
+	loose_players(State),
 	fight(State),
 	case Turn > 1 of true -> increment(); _ -> ok end,
 	gen_server:cast(?SERVER, send_world),
