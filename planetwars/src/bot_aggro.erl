@@ -125,8 +125,9 @@ solution_handler(#player{attack_list = AttackList, turn = CurrentTurn} = Player,
 			{AttackList, wait};
 		{Target, Len, Home} when (CurrentTurn + Len) < ?MAX_TURNS ->
 			{AttackList ++ [{Target #planet.id, CurrentTurn + Len}],
-			util:fleet_calculate(Map, Home #planet.id, Target #planet.id, Len, aggro)}
-		% _ -> {AttackList, wait}
+			util:fleet_calculate(Map, Home #planet.id, Target #planet.id, Len, aggro)};
+		_ ->
+			{AttackList, wait}
 	end,
 
 	{NewPlayer, Msg}  = make_message(Player, Map),
@@ -150,23 +151,6 @@ make_message(#player{searching_ally = true, last_message = LastMsg,
 			% util:mark_planets_by_owner(AllyID, Map, ally),
 			{Player #player{allies = Allies ++ [AllyID]}, LastMsg}
 	end.
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% analyze_map(Player, _Map,
-% 	#state{targets = Dict, search_radius = SearchRadius}) ->
-
-
-
-% 	World = analyze_planets(Player, Map, SearchRadius, self()),
-% 	Worlds = lists:sort(SortFun, lists:flatten([X || {_, X} <- dict:to_list(Dict)])),
-
-% 	FilterFun = fun({#planet{id = PlanetId}, _Len, _home}) ->
-% 		case proplists:get_value(PlanetId, AttackList) of
-% 			undefined -> true;
-% 			Turn -> CurrentTurn > Turn
-% 		end
-% 	end,
-
-% 	lists:filter(FilterFun, Worlds).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 analyze_planets(Player, Map, #state{search_radius = SearchRadius}) ->
 	HomeWorlds = ets:match_object(Map, #planet{owner_id = Player #player.id, _ = '_'}),
@@ -231,7 +215,8 @@ when HomeFleet > ?MIN_FLEET ->
 		no_target when length(Enemies) > 0 ->
 			{Enemy, Len} = hd(Enemies),
 			{Enemy, Len, Home};
-		R -> R
+		no_target -> no_target;
+		{_, _ ,_} = R -> R
 	end,
 
 	gen_server:cast(Pid, {analyze_complete, World}),

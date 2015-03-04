@@ -125,8 +125,9 @@ solution_handler(#player{attack_list = AttackList, turn = CurrentTurn} = Player,
 			{AttackList, wait};
 		{Target, Len, Home} when (CurrentTurn + Len) < ?MAX_TURNS ->
 			{AttackList ++ [{Target #planet.id, CurrentTurn + Len}],
-			util:fleet_calculate(Map, Home #planet.id, Target #planet.id, Len, safe)}
-		% _ -> {AttackList, wait}
+			util:fleet_calculate(Map, Home #planet.id, Target #planet.id, Len, safe)};
+		_ ->
+			{AttackList, wait}
 	end,
 
 	{NewPlayer, Msg}  = make_message(Player, Map),
