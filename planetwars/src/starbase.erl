@@ -112,7 +112,7 @@ handle_cast({message, #message{} = Message}, #state{player = Player} = State) ->
 	},
 	{noreply, State #state{player = UpdatedPlayer}};
 handle_cast({wait_decision, Pid, STime}, #state{player = Player, starmap = Map, loose = false} = State)  ->
-	Timeout = (800000 - timer:now_diff(now(), STime)) div 1000,
+	Timeout = (900000 - timer:now_diff(now(), STime)) div 1000,
 	% lager:info("Stime = ~p Timeout = ~p", [STime, Timeout]),
 	{ChangedPlayer, Reply} = case catch gen_server:call(State #state.bot_pid, {solution, Player, Map}, Timeout) of
 		{'EXIT', {timeout, _}} -> {Player, {timeout, Timeout}};
