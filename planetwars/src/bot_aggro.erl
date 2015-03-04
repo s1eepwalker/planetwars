@@ -121,9 +121,9 @@ solution_handler(#player{turn = CurrentTurn} = Player, Map, State) ->
 	{NewPlayer2 #player{attack_list = NewAttackList},
 	#order{fleet_command = FleetCommand, message = Msg}}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-make_message(#player{searching_ally = false, turn = CurrentTurn} = Player,
+make_message(#player{searching_ally = false, allies = All, turn = CurrentTurn} = Player,
 	{{_Target, Len, _Home}, {Pl1, Pl2, Fleet}})
-	when (CurrentTurn + Len) < ?MAX_TURNS andalso Len > 1 ->
+	when (CurrentTurn + Len) < ?MAX_TURNS andalso Len > 1 andalso length(All) > 0 ->
 			{Player #player{last_message = #message{}}, #message{
 				type = attack,
 				turn = CurrentTurn + Len,
