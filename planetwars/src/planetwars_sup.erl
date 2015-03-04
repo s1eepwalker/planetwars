@@ -29,12 +29,15 @@ start_link() ->
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
 	% Sup = {universe_sup, {universe_sup, start_link, []}, permanent, 2000, supervisor, [universe_sup]},
-	{ok, Team} = application:get_env(planetwars, team1),
-	BotName = proplists:get_value(botname, Team),
+	{ok, BotName} = application:get_env(planetwars, botname),
+	{ok, EmuOn} = application:get_env(planetwars, emulator),
 	Player = {starbase, {starbase, start_link, [starbase, BotName]}, permanent, 2000, worker, [starbase]},
 	Emulator = {emulator, {emulator, start_link, []}, permanent, 2000, worker, [emulator]},
 
-	ChildSpecs = [Player, Emulator],
+	ChildSpecs = case EmuOn of
+		true -> [Emulator];
+		false -> [Player]
+	end,
 	{ok, { {one_for_all, 0, 1}, ChildSpecs} }.
 
 %%====================================================================

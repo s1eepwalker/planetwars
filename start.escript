@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! -config sys.config -setcookie 123 -sname pw -pa planetwars/ebin/ _build/lib/lager/ebin _build/lib/goldrush/ebin _build/lib/sync/ebin -s lager
+%%! -config single.config -setcookie 123 -sname pw -pa planetwars/ebin/ _build/lib/lager/ebin _build/lib/goldrush/ebin _build/lib/sync/ebin -s lager
 -mode(compile).
 
 -include("planetwars/include/pw.hrl").
@@ -47,7 +47,9 @@ main(_Args) ->
 	net_kernel:start([pw, shortnames]),
 	% io:format("node = ~p, cookie ~p~n", [node(), erlang:get_cookie()]),
 	application:start(planetwars),
-
+	working_loop().
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+working_loop() ->
 	read_world(read_line()),
 
 	% wait decision
@@ -60,13 +62,17 @@ main(_Args) ->
 				{Pl1, Pl2, Fleet} ->
 					io:format("F ~p ~p ~p~n", [Pl1, Pl2, Fleet])
 			end,
-			io:format("M ~p~n", [util:encode_message(Msg)]),
+			case Msg #message.type =/= no_msg of
+				true ->
+					io:format("M ~p~n", [util:encode_message(Msg)]);
+				_ -> ok
+			end,
 			io:format(".~n")
 	after
 		1000 ->
 			%TIMED OUT!
-			io:format(?RED ".~n" ?NORM)
-
-	end.
+			io:format(".~n")
+	end,
+	working_loop().
 
 
