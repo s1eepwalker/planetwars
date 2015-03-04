@@ -106,6 +106,7 @@ code_change(_OldVsn, State, _Extra) ->
 solution_handler(#player{turn = CurrentTurn} = Player, Map, State) ->
 
 	{_Time, {Commands, NewPlayer}} = timer:tc(fun analyze_planets/3, [Player, Map, State]),
+		lager:info("Command ~p", [Commands]),
 	% case _Time > 300000 of
 	% 	true ->
 	% 		lager:critical("~p TIME ~p", [Player #player.id , _Time]);
@@ -142,16 +143,13 @@ make_message(#player{searching_ally = false, allies = All, turn = CurrentTurn} =
 				fleet = Fleet
 			}};
 make_message(#player{searching_ally = true, last_message = LastMsg,
-	allies = Allies, id = Id} = Player, _) ->
+	allies = Allies, id = Id} = Player, Cmds) ->
 	case LastMsg of
 		#message{type = no_msg} ->
-			% util:mark_planets_by_owner(Id, Map, ally),
 			{Player, #message{type = im_here, player_id = Id}};
 		#message{type = im_here, player_id = Id} ->
-			% util:mark_planets_other_team([Id] ++ Allies, Map),
-			{Player #player{searching_ally = false, last_message = #message{}}, #message{}};
+			make_message(Player #player{searching_ally = false}, Cmds);
 		#message{type = im_here, player_id = AllyID} ->
-			% util:mark_planets_by_owner(AllyID, Map, ally),
 			{Player #player{allies = Allies ++ [AllyID]}, LastMsg}
 	end;
 make_message(Player, _) ->
