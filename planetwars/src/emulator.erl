@@ -23,7 +23,8 @@
 		turn = 1           :: turn(),
 		orders = []        :: [{turn(), {planet_id(), {player_id(), fleet()}}}],
 		messages = []      :: [{player_id(), #message{}}],
-		wait_players = []  :: [{player_id(), pid()}]
+		wait_players = []  :: [{player_id(), pid()}],
+		winner = false     :: team1 | team2 | false
 	}).
 
 
@@ -199,7 +200,7 @@ load_map() ->
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = State) ->
-	show_world(State),
+	Winner = show_world(State),
 	Planets = ets:match_object(worldmap, '_'),
 	SendPlanets = fun({_PlayerId, Pid}) ->
 		[gen_server:cast(Pid, {planetinfo, Planet}) || Planet <- Planets]
@@ -220,25 +221,27 @@ send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = S
 	lists:foreach(SendMessages, Team1),
 	lists:foreach(SendMessages, Team2),
 
-	State #state{messages = []}.
+	State #state{messages = [], winner = Winner}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-wait_decisions_handler(#state{turn = Turn, team1 = Team1, team2 = Team2} = State) ->
+wait_decisions_handler(#state{turn = Turn, team1 = Team1, team2 = Team2, winner = Winner} = State) ->
 	Wait = fun({_PlayerId, Pid}) ->
 		gen_server:cast(Pid, {wait_decision, self(), now()})
 	end,
 	lists:foreach(Wait, Team1 ++ Team2),
-	case Turn =< ?MAX_TURNS of
+	case Turn =< ?MAX_TURNS andalso Winner == false of
 		true ->
 			timer:apply_after(1000, gen_server, cast, [?SERVER, next_turn]),
 			State #state {wait_players = Team1 ++ Team2};
 		false ->
-			io:format("SCORE:" ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n",
-				[util:fleet_total(worldmap, team1),
-				util:fleet_total(worldmap, team2),
-				util:fleet_total(worldmap, neutral)]),
-
+			case Winner of
+				team1 ->
+					io:format(?RED "TEAM1 WIN!"?NORM ,[]);
+				team2 ->
+					io:format(?BLUE "TEAM2 WIN!"?NORM ,[]);
+				_ ->
+					io:format(?GRAY "SEE SCORE", [])
+			end,
 			State #state {wait_players = []}
-
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
@@ -392,6 +395,17 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 		[util:fleet_total(worldmap, team1),
 		util:fleet_total(worldmap, team2),
 		util:fleet_total(worldmap, neutral),
-		T1, T2]).
+		T1, T2]),
+	ActualOrders = lists:filter(fun({Turn, _}) -> Turn >= CurrentTurn end, Orders),
+	case length(ActualOrders) > 0 of
+		true ->
+			false;
+		false ->
+			case T1 > T2 of
+				true when T2 == 0 -> team1;
+				false when T1 == 0 -> team2;
+				_ -> false
+			end
+	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
