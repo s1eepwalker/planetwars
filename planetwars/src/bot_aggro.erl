@@ -15,7 +15,7 @@
 -define(SERVER, ?MODULE).
 
 -define(MAX_TURNS, 200).
--define(SEARCH_RADIUS, 10).
+-define(SEARCH_RADIUS, 15).
 -define(MIN_FLEET, 3).
 
 

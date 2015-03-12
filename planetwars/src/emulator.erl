@@ -239,7 +239,7 @@ wait_decisions_handler(#state{turn = Turn, team1 = Team1, team2 = Team2, winner 
 				team2 ->
 					io:format(?BLUE "TEAM2 WIN!"?NORM ,[]);
 				_ ->
-					io:format(?GRAY "SEE SCORE", [])
+					io:format(?GRAY "SEE SCORE"?NORM, [])
 			end,
 			State #state {wait_players = []}
 	end.
@@ -267,7 +267,7 @@ order_handler(PlayerId, #order{fleet_command = Cmd, message = Msg},
 			[PlInfo | _] = ets:match_object(worldmap, #planet{id = Pl1, _ = '_'}),
 			ets:insert(worldmap, PlInfo #planet{fleet = PlInfo #planet.fleet - Fleet}),
 			Orders ++ [{CurrentTurn + util:flight_time(Pl1, Pl2, worldmap),
-			{Pl2, {PlayerId, Fleet}}}]
+			{Pl2, {Pl1, PlayerId, Fleet}}}]
 	end,
 	State #state{
 		messages = NewMessages,
@@ -306,7 +306,7 @@ get_team(PlayerId, #state{team1 = Team1, team2 = Team2}) ->
 % 	[F(X) || X <- State #state.wait_players].
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fight(#state{turn = Turn, orders = Orders} = State) ->
-	% {planet_id(), {player_id(), fleet()}}
+	% {planet_id(), {planet_id(from), player_id(), fleet()}}
 	List = proplists:get_all_values(Turn, Orders),
 	orbital_fight(List, State).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -317,9 +317,9 @@ orbital_fight([{PlanetId, _} = Rem| _] = Planets, State) ->
 	[PlInfo | _] = ets:match_object(worldmap,#planet{id = PlanetId, fleet = '$1', _ = '_'}),
 
 	List = proplists:get_all_values(PlanetId, Planets) ++
-		[{planet, PlInfo #planet.fleet}],
-	SortFun = fun({_P1, F1}, {_P2, F2}) -> F1 > F2 end,
-	[{P1, F1}, {P2, F2} | _] = lists:sort(SortFun, List),
+		[{0, planet, PlInfo #planet.fleet}],
+	SortFun = fun({_PFrom1, _P1, F1}, {_PFrom2, _P2, F2}) -> F1 > F2 end,
+	[{_, P1, F1}, {_, P2, F2} | _] = lists:sort(SortFun, List),
 	{Winner, RestFleet} = case F1 > F2 of
 		true -> {P1, F1 - F2};
 		false when F2 > F1 -> {P2, F2 - F1};
@@ -346,18 +346,39 @@ increment() ->
 	lists:foreach(F, List).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
-	Planets = ets:match_object(worldmap, #planet{_ = '_'}),
-	PrintPlanet = fun(#planet{
-			id = Id,
-			owner_id = OwnerId,
-			x = X,
-			y = Y,
-			fleet = Fleet,
-			confederate = Conf
-		}) ->
-	lists:flatten(io_lib:format("<~p>(~p) ~p x=~py=~p Fleet=~p",
-		[OwnerId, Id, Conf, X,Y, Fleet]))
+	SortFun = fun
+			(#planet{x = X1, y = Y}, #planet{x = X2, y = Y}) -> X1 < X2;
+			(#planet{y = Y1}, #planet{y = Y2}) -> Y1 < Y2
 	end,
+
+	Planets = lists:sort(SortFun, ets:match_object(worldmap, #planet{_ = '_'})),
+
+	Space = fun
+			Space(X) when X < 1 -> ok;
+			Space(X) ->  io:format(?GRAY" "?NORM, []), Space(X -1)
+	end,
+
+
+	PrintPlanets = fun(#planet{x = X, y = Y, confederate = Conf},
+		{{PrevY, PrevX}, {Team1, Team2}}) ->
+		case Y - PrevY of
+			0 ->
+				Space(X - PrevX -1);
+			Lines ->
+				[io:format("~n") || _ <- lists:seq(1, Lines)],
+				Space(X)
+		end,
+
+		{T1, T2} = case Conf of
+			team1 -> io:format(?RED"O"?NORM, []), {Team1 + 1, Team2};
+			team2 -> io:format(?BLUE"O"?NORM, []), {Team1, Team2 + 1};
+			neutral -> io:format(?GRAY"O"?NORM, []), {Team1, Team2}
+		end,
+		{{Y, X}, {T1, T2}}
+	end,
+	{_,{T1, T2}} = lists:foldl(PrintPlanets, {{0, 0}, {0,0}}, Planets),
+	io:format("~n"),
+
 	ColorPlanet = fun(Id) ->
 		[#planet{confederate = Conf} | _] = ets:lookup(worldmap, Id),
 		case Conf of
@@ -366,36 +387,51 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 			neutral -> lists:flatten(io_lib:format(?GRAY "(~p)" ?NORM, [Id]))
 		end
 	end,
-	PrintOrder = fun({Turn, {PlanetId, {PlayerId, Fleet}}}) ->
-		lists:flatten(io_lib:format("<~p> ---- F~p ----> ~s Turn = ~p",
-			[PlayerId, Fleet, ColorPlanet(PlanetId), Turn]))
-	end,
-
-
-	F = fun(X, {Team1, Team2}) ->
-		case X #planet.confederate of
-			team1 -> io:format(?RED "~s~n" ?NORM, [PrintPlanet(X)]), {Team1 +1, Team2};
-			team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintPlanet(X)]), {Team1, Team2 + 1};
-			neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintPlanet(X)]), {Team1, Team2}
+	PrintOrder = fun({Turn, {PlanetId, {PlanetFrom, PlayerId, Fleet}}}) ->
+		case get_team(PlayerId, State) of
+			team1 ->
+				io:format(?RED"<~p> ~s" ?RED" ---- F~p ----> ~s Turn = ~p~n",
+			[PlayerId, ColorPlanet(PlanetFrom), Fleet, ColorPlanet(PlanetId), Turn]);
+			team2 ->
+				io:format(?BLUE"<~p> ~s" ?BLUE" ---- F~p ----> ~s Turn = ~p~n",
+			[PlayerId, ColorPlanet(PlanetFrom), Fleet, ColorPlanet(PlanetId), Turn])
 		end
 	end,
-	F2 = fun({Turn, {_, {PlayerID, _}}} = X) when Turn >= CurrentTurn ->
-		case get_team(PlayerID, State) of
-			team1 -> io:format(?RED "~s~n" ?NORM, [PrintOrder(X)]);
-			team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintOrder(X)]);
-			neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintOrder(X)])
-		end;
+	% PrintPlanet = fun(#planet{
+	% 		id = Id,
+	% 		owner_id = OwnerId,
+	% 		x = X,
+	% 		y = Y,
+	% 		fleet = Fleet,
+	% 		confederate = Conf
+	% 	}) ->
+	% lists:flatten(io_lib:format("<~p>(~p) ~p x=~py=~p Fleet=~p",
+	% 	[OwnerId, Id, Conf, X,Y, Fleet]))
+	% end,
+
+
+	% F = fun(X, {Team1, Team2}) ->
+	% 	case X #planet.confederate of
+	% 		team1 -> io:format(?RED "~s~n" ?NORM, [PrintPlanet(X)]), {Team1 +1, Team2};
+	% 		team2 -> io:format(?BLUE "~s~n" ?NORM, [PrintPlanet(X)]), {Team1, Team2 + 1};
+	% 		neutral -> io:format(?GRAY "~s~n" ?NORM, [PrintPlanet(X)]), {Team1, Team2}
+	% 	end
+	% end,
+	% {T1, T2} =lists:foldl(F, {0, 0}, Planets),
+	F2 = fun({Turn, _} = X) when Turn >= CurrentTurn ->
+		PrintOrder(X);
 		(_) -> ok
 	end,
-	{T1, T2} =lists:foldl(F, {0, 0}, Planets),
+
+
 	lists:foreach(F2, Orders),
 	io:format(?YELLOW "TURN ~p~n" ?NORM, [CurrentTurn - 1]),
-	io:format("SCORE:" ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n"
-	 "Planets: " ?RED "~p" ?NORM " VS " ?BLUE "~p"?NORM "~n",
-		[util:fleet_total(worldmap, team1),
+	io:format(
+	"Planets: " ?RED "~p" ?NORM " VS " ?BLUE "~p"?NORM "~n"
+	"SCORE:  " ?RED" ~p"?NORM" VS " ?BLUE" ~p" ?NORM " " ?GRAY "(~p)" ?NORM "~n",
+		[T1, T2, util:fleet_total(worldmap, team1),
 		util:fleet_total(worldmap, team2),
-		util:fleet_total(worldmap, neutral),
-		T1, T2]),
+		util:fleet_total(worldmap, neutral)]),
 	ActualOrders = lists:filter(fun({Turn, _}) -> Turn >= CurrentTurn end, Orders),
 	case length(ActualOrders) > 0 of
 		true ->
