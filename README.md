@@ -1,4 +1,4 @@
 # planetwars
-start.sh - run emulator with emu.config
+start.sh - run emulator (emu.config)
 
-startsc.sh - run only one stdin/stdout bot with single.config
+startsc.sh - run only one stdin/stdout bot (single.config)
