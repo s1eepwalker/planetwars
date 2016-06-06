@@ -14,7 +14,7 @@
 -export([code_change/3]).
 -define(SERVER, ?MODULE).
 
--define(MAX_TURNS, 200).
+-define(MAX_TURNS, 10000).
 -define(SEARCH_RADIUS, 15).
 -define(MIN_FLEET, 3).
 

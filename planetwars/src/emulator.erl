@@ -13,7 +13,7 @@
 -export([terminate/2]).
 -export([code_change/3]).
 -define(SERVER, ?MODULE).
--define(MAX_TURNS, 200).
+-define(MAX_TURNS, 10000).
 
 -include("pw.hrl").
 
@@ -225,7 +225,7 @@ send_world_handler(#state{team1 = Team1, team2 = Team2, messages = Messages} = S
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 wait_decisions_handler(#state{turn = Turn, team1 = Team1, team2 = Team2, winner = Winner} = State) ->
 	Wait = fun({_PlayerId, Pid}) ->
-		gen_server:cast(Pid, {wait_decision, self(), now()})
+		gen_server:cast(Pid, {wait_decision, self(), erlang:timestamp()})
 	end,
 	lists:foreach(Wait, Team1 ++ Team2),
 	case Turn =< ?MAX_TURNS andalso Winner == false of
@@ -359,7 +359,7 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 	end,
 
 
-	PrintPlanets = fun(#planet{x = X, y = Y, confederate = Conf},
+	PrintPlanets = fun(#planet{x = X, y = Y, confederate = Conf, fleet = Fleet},
 		{{PrevY, PrevX}, {Team1, Team2}}) ->
 		case Y - PrevY of
 			0 ->
@@ -368,16 +368,24 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 				[io:format("~n") || _ <- lists:seq(1, Lines)],
 				Space(X)
 		end,
+		Symbol = case Fleet of
+			_ when Fleet < 10 -> ",";
+			_ when Fleet < 20 -> "+";
+			_ when Fleet < 30 -> "x";
+			_ when Fleet < 40 -> "o";
+			_ when Fleet < 50 -> "4";
+			_ when Fleet < 60 -> "5";
+			_ when Fleet < 70 -> "6";
+			_  -> "@"
 
+		end,
 		{T1, T2} = case Conf of
-			team1 -> io:format(?RED"O"?NORM, []), {Team1 + 1, Team2};
-			team2 -> io:format(?BLUE"O"?NORM, []), {Team1, Team2 + 1};
-			neutral -> io:format(?GRAY"O"?NORM, []), {Team1, Team2}
+			team1 -> io:format(?RED++Symbol++?NORM, []), {Team1 + 1, Team2};
+			team2 -> io:format(?BLUE++Symbol++?NORM, []), {Team1, Team2 + 1};
+			neutral -> io:format(?GRAY++Symbol++?NORM, []), {Team1, Team2}
 		end,
 		{{Y, X}, {T1, T2}}
 	end,
-	{_,{T1, T2}} = lists:foldl(PrintPlanets, {{0, 0}, {0,0}}, Planets),
-	io:format("~n"),
 
 	ColorPlanet = fun(Id) ->
 		[#planet{confederate = Conf} | _] = ets:lookup(worldmap, Id),
@@ -422,9 +430,11 @@ show_world(#state{turn = CurrentTurn, orders = Orders} = State) ->
 		PrintOrder(X);
 		(_) -> ok
 	end,
-
-
-	lists:foreach(F2, Orders),
+	%ORDERS
+	% lists:foreach(F2, Orders),
+	%MAP
+	{_,{T1, T2}} = lists:foldl(PrintPlanets, {{0, 0}, {0,0}}, Planets), io:format("~n"),
+	%TOTAL
 	io:format(?YELLOW "TURN ~p~n" ?NORM, [CurrentTurn - 1]),
 	io:format(
 	"Planets: " ?RED "~p" ?NORM " VS " ?BLUE "~p"?NORM "~n"
