@@ -1,5 +1,5 @@
 #!/usr/bin/env escript
-%%! -config single.config -setcookie 123 -sname pw -pa planetwars/ebin/ _build/lib/lager/ebin _build/lib/goldrush/ebin _build/lib/sync/ebin -s lager
+%%! -config config/single.config -setcookie 123 -sname pw -pa planetwars/ebin/ _checkouts/lager/ebin _checkouts/goldrush/ebin _checkouts/sync/ebin -s lager
 -mode(compile).
 
 -include("planetwars/include/pw.hrl").
